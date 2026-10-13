@@ -1,0 +1,2 @@
+// Reserved for the NeoForge 26.1.2 port. No mod artifact is produced yet.
+plugins { id 'base' }

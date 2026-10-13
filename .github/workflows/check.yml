@@ -1,0 +1,73 @@
+name: Check
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Checkout Myotus development dependency
+        uses: actions/checkout@v6
+        with:
+          repository: mc-myo-s-mod/Myotus
+          ref: f0a006dba2a33c8eb24c656124011b43c154ddff
+          path: .ci/myotus
+          persist-credentials: false
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: |
+            17
+            21
+
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-provider: basic
+
+      - name: Publish Myotus to isolated Maven local
+        working-directory: .ci/myotus
+        run: |
+          cmd.exe /c gradlew.bat :neoforge-1-21-1:publishToMavenLocal "-Dmaven.repo.local=$env:RUNNER_TEMP\atm-maven" -x :neoforge-1-21-1:signMavenPublication --no-daemon --max-workers=2 --console=plain
+          if ($LASTEXITCODE -ne 0) { throw "Myotus local publication failed: $LASTEXITCODE" }
+
+      - name: Compile and build ATM
+        run: |
+          cmd.exe /c gradlew.bat :neoforge-1.21.1:compileJava build "-Dmaven.repo.local=$env:RUNNER_TEMP\atm-maven" --no-daemon --max-workers=2 --console=plain
+          if ($LASTEXITCODE -ne 0) { throw "ATM build failed: $LASTEXITCODE" }
+
+      - name: Run 62 ATM GameTests with both optional integrations
+        run: |
+          cmd.exe /c gradlew.bat :neoforge-1.21.1:runGameTestServer "-Dmaven.repo.local=$env:RUNNER_TEMP\atm-maven" -Penable_curios=true -Penable_accessories=true --no-daemon --max-workers=2 --console=plain
+          if ($LASTEXITCODE -ne 0) { throw "ATM GameTests failed: $LASTEXITCODE" }
+          $log = Get-Content neoforge-1.21.1/run-gametest/logs/latest.log -Raw
+          if ($log -notmatch 'All 62 required tests passed') { throw 'Missing ATM 62-test success marker' }
+
+      - name: Check product JAR
+        run: |
+          $jars = @(Get-ChildItem neoforge-1.21.1/build/libs/AppliedTerminalModules-*.jar)
+          if ($jars.Count -ne 1) { throw 'Expected one ATM product JAR' }
+          $jar = [System.IO.Compression.ZipFile]::OpenRead($jars[0].FullName)
+          try {
+            $forbidden = @($jar.Entries | Where-Object { $_.FullName -match '(^me/myogoo/appliedterminalmodules/(gametest|verification)/|atm-smoke\.mixins\.json$|^data/appliedterminalmodules/structure/.*\.nbt$|Smoke[^/]*\.class$)' })
+            if ($forbidden.Count) { throw "Development entries in product JAR: $($forbidden.FullName -join ', ')" }
+          } finally { $jar.Dispose() }
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: appliedterminalmodules-1.21.1
+          path: neoforge-1.21.1/build/libs/AppliedTerminalModules-*.jar
+          if-no-files-found: error

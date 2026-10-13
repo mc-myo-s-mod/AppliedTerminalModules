@@ -1,0 +1,7 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "ae2:item/basic_card",
+    "layer1": "minecraft:item/iron_chestplate"
+  }
+}

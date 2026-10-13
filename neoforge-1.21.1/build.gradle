@@ -1,0 +1,134 @@
+plugins {
+    id 'java-library'
+    id 'net.neoforged.moddev' version '2.0.140'
+}
+
+def moduleProperties = new Properties()
+file('gradle.properties').withInputStream { moduleProperties.load(it) }
+moduleProperties.each { key, value ->
+    if (!gradle.startParameter.projectProperties.containsKey(key.toString())) {
+        ext.set(key.toString(), value)
+    }
+}
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+base.archivesName = "AppliedTerminalModules-${minecraft_version}"
+tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }
+
+repositories {
+    maven {
+        url = 'https://maven.blamejared.com/'
+        content { includeGroup 'mezz.jei' }
+    }
+    maven {
+        url = 'https://maven.terraformersmc.com/'
+        content { includeGroup 'dev.emi' }
+    }
+    maven {
+        url = 'https://maven.theillusivec4.top/'
+        content { includeGroup 'top.theillusivec4.curios' }
+    }
+    maven {
+        url = 'https://maven.wispforest.io/releases'
+        content {
+            includeGroup 'io.wispforest'
+            includeGroup 'io.wispforest.endec'
+        }
+    }
+    maven {
+        url = 'https://maven.su5ed.dev/releases'
+        content { includeGroup 'org.sinytra.forgified-fabric-api' }
+    }
+}
+
+sourceSets.main {
+    java.srcDir rootProject.file('common/src/main/java')
+    resources.srcDir rootProject.file('common/src/main/resources')
+    resources.srcDir 'src/generated/resources'
+    if (findProperty('client_smoke') == 'true') {
+        java.srcDir 'src/smoke/java'
+        resources.srcDir 'src/smoke/resources'
+    }
+}
+
+neoForge {
+    version = project.neo_version
+    runs {
+        client {
+            client()
+            gameDirectory = file('run-client')
+            systemProperty 'appliedterminalmodules.clientSmoke', findProperty('client_smoke') ?: 'false'
+            systemProperty 'appliedterminalmodules.recipeViewer', findProperty('recipe_viewer') ?: 'none'
+            if (findProperty('client_smoke') == 'true' && findProperty('recipe_viewer') == 'jei') {
+                programArguments.addAll '--mixin', 'atm-smoke.mixins.json'
+            }
+        }
+        server {
+            server()
+            gameDirectory = file('run-server')
+            programArgument '--nogui'
+        }
+        gameTestServer {
+            type = 'gameTestServer'
+            gameDirectory = file('run-gametest')
+            systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+        }
+        data {
+            data()
+            gameDirectory = file('run-data')
+            programArguments.addAll '--mod', project.mod_id, '--all',
+                    '--output', file('src/generated/resources').absolutePath,
+                    '--existing', rootProject.file('common/src/main/resources').absolutePath,
+                    '--existing', file('src/main/resources').absolutePath
+        }
+    }
+    mods {
+        "${mod_id}" { sourceSet sourceSets.main }
+    }
+}
+
+dependencies {
+    implementation "org.appliedenergistics:appliedenergistics2:${ae2_version}"
+    implementation "me.myogoo:myotus:${myotus_version}"
+    implementation "org.appliedenergistics:guideme:${guideme_version}"
+    compileOnly "mezz.jei:jei-${minecraft_version}-neoforge-api:${jei_version}"
+    compileOnly "dev.emi:emi-neoforge:${emi_version}"
+    def viewer = findProperty('recipe_viewer') ?: 'none'
+    if (!(viewer in ['none', 'jei', 'emi', 'both'])) {
+        throw new GradleException('recipe_viewer must be none, jei, emi, or both')
+    }
+    if (viewer in ['jei', 'both']) {
+        modDevRuntimeDependencies "mezz.jei:jei-${minecraft_version}-neoforge:${jei_version}"
+    }
+    if (viewer in ['emi', 'both']) {
+        modDevRuntimeDependencies "dev.emi:emi-neoforge:${emi_version}"
+    }
+    compileOnly "top.theillusivec4.curios:curios-neoforge:${curios_version}"
+    if (providers.gradleProperty('enable_curios').orElse(project.enable_curios).get() != 'false') {
+        modDevRuntimeDependencies "top.theillusivec4.curios:curios-neoforge:${curios_version}"
+    }
+    compileOnly "io.wispforest:accessories-neoforge:${accessories_version}"
+    if (providers.gradleProperty('enable_accessories').orElse(project.enable_accessories).get() == 'true') {
+        modDevRuntimeDependencies "io.wispforest:accessories-neoforge:${accessories_version}"
+    }
+}
+
+def generateModMetadata = tasks.register('generateModMetadata', ProcessResources) {
+    def properties = ['mod_id', 'mod_name', 'mod_version', 'mod_license', 'mod_authors', 'mod_description']
+            .collectEntries { [(it): project.property(it)] }
+    inputs.properties properties
+    expand properties
+    from 'src/main/templates'
+    into layout.buildDirectory.dir('generated/modMetadata')
+}
+sourceSets.main.resources.srcDir generateModMetadata
+neoForge.ideSyncTask generateModMetadata
+
+tasks.named('processResources').configure { exclude '.cache/**' }
+tasks.withType(Jar).configureEach {
+    exclude 'me/myogoo/appliedterminalmodules/gametest/**'
+    exclude 'me/myogoo/appliedterminalmodules/verification/**'
+    exclude 'atm-smoke.mixins.json'
+    exclude 'data/appliedterminalmodules/structure/empty.nbt'
+}
+tasks.named('runServer', JavaExec).configure { standardInput = System.in }

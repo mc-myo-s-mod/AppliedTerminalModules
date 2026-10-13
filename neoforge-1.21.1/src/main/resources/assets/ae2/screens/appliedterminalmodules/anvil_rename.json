@@ -1,0 +1,10 @@
+{
+  "includes": ["../common/common.json"],
+  "generatedBackground": { "width": 220, "height": 80 },
+  "text": { "dialog_title": { "position": { "left": 8, "top": 7 } } },
+  "widgets": {
+    "name": { "left": 10, "top": 24, "width": 200, "height": 20 },
+    "apply": { "left": 10, "top": 52, "width": 96, "height": 20 },
+    "cancel": { "left": 114, "top": 52, "width": 96, "height": 20 }
+  }
+}

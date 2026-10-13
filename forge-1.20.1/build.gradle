@@ -1,0 +1,2 @@
+// Reserved for the Forge 1.20.1 port. No mod artifact is produced yet.
+plugins { id 'base' }
